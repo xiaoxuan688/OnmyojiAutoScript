@@ -94,8 +94,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         con_scrolls: Scrolls = self.config.orochi.scrolls
         if not con_scrolls.scrolls_enable:
             return
-        self.screenshot()
+        # 战斗中不检测 (突破卷不可见)
+        if self.is_in_battle(False):
+            return
         cu, res, total = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
+        if total == 0:
+            return
         logger.info(f'Scrolls mode: realm raid ticket {cu}/{total}')
         if cu < con_scrolls.scrolls_threshold:
             return
