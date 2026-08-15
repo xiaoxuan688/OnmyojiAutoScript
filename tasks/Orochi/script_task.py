@@ -1,4 +1,4 @@
-# This Python file uses the following encoding: utf-8
+﻿# This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
 import random
@@ -128,7 +128,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                         self.soul(is_open=False)
                         self.close_buff()
                     next_run = datetime.now() + config.scrolls.scrolls_cd
-                    self.set_next_run(task='Orochi', success=False, finish=False, target=next_run)
+                    self.set_next_run(task='Orochi', success=False, finish=False, target=next_run, server=False)
                     self.set_next_run(task='RealmRaid', success=False, finish=False, server=False, target=datetime.now())
                     raise TaskEnd
             else:
@@ -193,7 +193,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             self.soul(is_open=False)
             self.close_buff()
         next_run = datetime.now() + con_scrolls.scrolls_cd
-        self.set_next_run(task='Orochi', success=False, finish=False, target=next_run)
+        self.set_next_run(task='Orochi', success=False, finish=False, target=next_run, server=False)
         self.set_next_run(task='RealmRaid', success=False, finish=False, server=False, target=datetime.now())
         raise TaskEnd
 
