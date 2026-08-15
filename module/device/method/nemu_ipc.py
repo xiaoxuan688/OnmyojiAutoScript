@@ -106,6 +106,13 @@ class CaptureNemuIpc(CaptureStd):
         if self.is_capturing():
             return self
 
+        # GUI mode (OASX) has sys.stdout/stderr as None, skip capture to avoid crash
+        if sys.stdout is None or sys.stderr is None:
+            self._captured = False
+            CaptureNemuIpc.instance = self
+            return self
+        self._captured = True
+
         super().__enter__()
         CaptureNemuIpc.instance = self
         return self
@@ -115,10 +122,11 @@ class CaptureNemuIpc(CaptureStd):
             return
 
         CaptureNemuIpc.instance = None
-        super().__exit__(exc_type, exc_val, exc_tb)
+        if getattr(self, '_captured', False):
+            super().__exit__(exc_type, exc_val, exc_tb)
 
-        self.check_stdout()
-        self.check_stderr()
+            self.check_stdout()
+            self.check_stderr()
 
     def check_stdout(self):
         if not self.stdout:
