@@ -2,6 +2,8 @@
 # @author runhey
 # github https://github.com/runhey
 import random
+import json
+from pathlib import Path
 from time import sleep
 from datetime import time, datetime, timedelta
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
@@ -36,6 +38,54 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
     def _exit_matcher(self) -> ExitMatcher | None:
         return any_of(self.I_GI_EMOJI_1, self.I_GI_EMOJI_2, self.I_CHECK_EXPLORATION)
 
+    SCROLLS_SYNC_FILE = Path(r'E:\\scrolls_sync.json')
+
+    def write_scrolls_sync(self, count: int) -> None:
+        role = 'leader' if self.config.orochi.orochi_config.user_status == UserStatus.LEADER else 'member'
+        try:
+            data = {}
+            if self.SCROLLS_SYNC_FILE.exists():
+                data = json.loads(self.SCROLLS_SYNC_FILE.read_text(encoding='utf-8'))
+            data[role] = {'initial_count': count, 'timestamp': datetime.now().isoformat()}
+            tmp = self.SCROLLS_SYNC_FILE.with_suffix('.tmp')
+            tmp.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+            tmp.replace(self.SCROLLS_SYNC_FILE)
+        except Exception as e:
+            logger.warning(f'Scrolls sync: write failed: {e}')
+
+    def read_other_initial_count(self) -> int:
+        my_role = 'leader' if self.config.orochi.orochi_config.user_status == UserStatus.LEADER else 'member'
+        other_role = 'member' if my_role == 'leader' else 'leader'
+        try:
+            if not self.SCROLLS_SYNC_FILE.exists():
+                return -1
+            data = json.loads(self.SCROLLS_SYNC_FILE.read_text(encoding='utf-8'))
+            other = data.get(other_role)
+            if not other:
+                return -1
+            ts = datetime.fromisoformat(other['timestamp'])
+            if (datetime.now() - ts).total_seconds() > 7200:
+                return -1
+            return other.get('initial_count', -1)
+        except Exception:
+            return -1
+
+    def check_scrolls_sync(self) -> bool:
+        con_scrolls = self.config.orochi.scrolls
+        if not con_scrolls.scrolls_enable:
+            return False
+        my_upper = self.scroll_count_initial + self.current_count
+        if my_upper < con_scrolls.scrolls_threshold:
+            return False
+        other_initial = self.read_other_initial_count()
+        if other_initial < 0:
+            return True
+        other_upper = other_initial + self.current_count
+        if other_upper < con_scrolls.scrolls_threshold:
+            logger.info(f'Scrolls sync: waiting for other account (other upper={other_upper} < {con_scrolls.scrolls_threshold})')
+            return False
+        return True
+
     def _handle_reward(self, context: BattleContext, config: GeneralBattleConfig) -> BattleAction:
         # 无论胜利与否, 都会出现是否邀请一次队友, 区别在于, 失败的话不会出现那个勾选默认邀请的框
         if self.config.orochi.orochi_config.user_status == UserStatus.LEADER and \
@@ -69,6 +119,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if total > 0:
                 self.scroll_count_initial = cu
                 logger.info(f'Scrolls mode: initial realm raid ticket {cu}/{total}')
+                self.write_scrolls_sync(cu)
                 if cu >= config.scrolls.scrolls_threshold:
                     logger.info(f'Scrolls mode: ticket already >= threshold {config.scrolls.scrolls_threshold}, switching to RealmRaid')
                     if config.orochi_config.soul_buff_enable:
@@ -82,6 +133,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     raise TaskEnd
             else:
                 logger.info('Scrolls mode: OCR failed, will use counter only')
+                self.write_scrolls_sync(0)
 
         success = True
         match config.orochi_config.user_status:
@@ -196,10 +248,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 这个时候我已经进入房间了哦
         while 1:
             self.screenshot()
-            # 绘卷模式: 上界检测 (突破卷随机掉落, 计数是上界, 实际可能更少)
-            if self.config.orochi.scrolls.scrolls_enable and \
-               self.scroll_count_initial + self.current_count >= self.config.orochi.scrolls.scrolls_threshold:
-                logger.info('Scrolls mode: ticket upper bound reached, ending session to check actual count')
+            # 绘卷模式: 双号同步上界检测 (两个号都到上界才退出, 避免单号先走)
+            if self.check_scrolls_sync():
+                logger.info('Scrolls mode: both accounts upper bound reached threshold')
                 break
             if self.current_count >= self.limit_count:
                 if self.is_in_room():
@@ -262,10 +313,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
-            # 绘卷模式: 上界检测 (突破卷随机掉落, 计数是上界, 实际可能更少)
-            if self.config.orochi.scrolls.scrolls_enable and \
-               self.scroll_count_initial + self.current_count >= self.config.orochi.scrolls.scrolls_threshold:
-                logger.info('Scrolls mode: ticket upper bound reached, ending session to check actual count')
+            # 绘卷模式: 双号同步上界检测 (两个号都到上界才退出, 避免单号先走)
+            if self.check_scrolls_sync():
+                logger.info('Scrolls mode: both accounts upper bound reached threshold')
                 break
             if self.current_count >= self.limit_count:
                 logger.info('Orochi count limit out')
@@ -325,10 +375,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 continue
             if not is_in_orochi():
                 continue
-            # 绘卷模式: 上界检测 (突破卷随机掉落, 计数是上界, 实际可能更少)
-            if self.config.orochi.scrolls.scrolls_enable and \
-               self.scroll_count_initial + self.current_count >= self.config.orochi.scrolls.scrolls_threshold:
-                logger.info('Scrolls mode: ticket upper bound reached, ending session to check actual count')
+            # 绘卷模式: 双号同步上界检测 (两个号都到上界才退出, 避免单号先走)
+            if self.check_scrolls_sync():
+                logger.info('Scrolls mode: both accounts upper bound reached threshold')
                 break
             if self.current_count >= self.limit_count:
                 logger.info('Orochi count limit out')
@@ -382,10 +431,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
 
-            # 绘卷模式: 上界检测 (突破卷随机掉落, 计数是上界, 实际可能更少)
-            if self.config.orochi.scrolls.scrolls_enable and \
-               self.scroll_count_initial + self.current_count >= self.config.orochi.scrolls.scrolls_threshold:
-                logger.info('Scrolls mode: ticket upper bound reached, ending session to check actual count')
+            # 绘卷模式: 双号同步上界检测 (两个号都到上界才退出, 避免单号先走)
+            if self.check_scrolls_sync():
+                logger.info('Scrolls mode: both accounts upper bound reached threshold')
                 break
 
             if self.current_count >= self.limit_count:
