@@ -61,12 +61,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 self.close_buff()
 
         success = True
+        # 绘卷模式: 进入战斗前检测突破卷 (游戏在page_main, 突破卷不可见, 需到page_orochi)
+        if not self.is_in_battle(False):
+            self.activate_realm_raid()
+
         match config.orochi_config.user_status:
             case UserStatus.LEADER: success = self.run_leader()
             case UserStatus.MEMBER: success = self.run_member()
             case UserStatus.ALONE: self.run_alone()
             case UserStatus.WILD: success = self.run_wild()
             case _: logger.error('Unknown user status')
+
+        # 绘卷模式: 战斗结束后检测突破卷 (游戏已退出房间, 可到page_orochi检测)
+        if not self.is_in_battle(False):
+            self.activate_realm_raid()
 
         # 御魂结束后检测是否出现真蛇
         if config.orochi_config.check_true_orochi_enable:
@@ -90,15 +98,20 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         raise TaskEnd
 
     def activate_realm_raid(self) -> None:
-        """绘卷模式: 在八岐大蛇运行期间检测突破卷数量, 达到阈值时切换到个人突破"""
+        """绘卷模式: 在御魂页面检测突破卷数量, 达到阈值时切换到个人突破
+        突破卷只在page_orochi可见, 组队房间内不可见, 所以检测点设在:
+        1. 进入战斗前 (run()中, match之前)
+        2. 战斗结束后 (run()中, match之后)
+        """
         con_scrolls: Scrolls = self.config.orochi.scrolls
         if not con_scrolls.scrolls_enable:
             return
-        # 战斗中不检测 (突破卷不可见)
-        if self.is_in_battle(False):
-            return
+        # 导航到御魂页面 (突破卷在此页面可见)
+        self.goto_page(page_orochi)
+        self.screenshot()
         cu, res, total = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
         if total == 0:
+            logger.info('Scrolls mode: OCR failed to read realm raid ticket')
             return
         logger.info(f'Scrolls mode: realm raid ticket {cu}/{total}')
         if cu < con_scrolls.scrolls_threshold:
@@ -168,8 +181,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 这个时候我已经进入房间了哦
         while 1:
             self.screenshot()
-            # 绘卷模式: 检测突破卷
-            self.activate_realm_raid()
             if self.current_count >= self.limit_count:
                 if self.is_in_room():
                     logger.info('Orochi count limit out')
@@ -231,8 +242,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
-            # 绘卷模式: 检测突破卷
-            self.activate_realm_raid()
             if self.current_count >= self.limit_count:
                 logger.info('Orochi count limit out')
                 break
@@ -289,8 +298,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
-            # 绘卷模式: 检测突破卷
-            self.activate_realm_raid()
             if not is_in_orochi():
                 continue
             if self.current_count >= self.limit_count:
@@ -344,9 +351,6 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
-
-            # 绘卷模式: 检测突破卷
-            self.activate_realm_raid()
 
             if self.current_count >= self.limit_count:
                 if self.is_in_room():
