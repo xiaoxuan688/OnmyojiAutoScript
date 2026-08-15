@@ -7,7 +7,7 @@ from datetime import datetime, time
 
 from tasks.Component.SwitchSoul.switch_soul_config import SwitchSoulConfig as BaseSwitchSoulConfig
 from tasks.Component.config_scheduler import Scheduler
-from tasks.Component.config_base import ConfigBase, Time
+from tasks.Component.config_base import ConfigBase, Time, TimeDelta
 from tasks.Component.GeneralInvite.config_invite import InviteConfig
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 
@@ -32,6 +32,13 @@ class Layer(str, Enum):
     ELEVEN = '悲鸣'
     TWELVE = '神罚'
     THIRTEEN = '虚无'
+
+
+class Scrolls(BaseModel):
+    # 绘卷模式
+    scrolls_enable: bool = Field(title='绘卷模式', default=False, description='scrolls_enable_help')
+    scrolls_cd: TimeDelta = Field(title='间隔时间', default=TimeDelta(hours=0, minutes=30, seconds=0), description='scrolls_cd_help')
+    scrolls_threshold: int = Field(title='突破票数量', default=25, description='scrolls_threshold_help')
 
 
 class OrochiConfig(ConfigBase):
@@ -71,4 +78,4 @@ class Orochi(ConfigBase):
     invite_config: InviteConfig = Field(default_factory=InviteConfig)
     general_battle_config: GeneralBattleConfig = Field(default_factory=GeneralBattleConfig)
     switch_soul: SwitchSoulConfig = Field(default_factory=SwitchSoulConfig)
-
+    scrolls: Scrolls = Field(default_factory=Scrolls)

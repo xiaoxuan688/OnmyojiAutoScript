@@ -14,7 +14,7 @@ from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import any_of, page_main, page_reward, page_shikigami_records, page_soul_zones
 from tasks.Orochi.assets import OrochiAssets
-from tasks.Orochi.config import Orochi, UserStatus, Layer
+from tasks.Orochi.config import Orochi, UserStatus, Layer, Scrolls
 from tasks.TrueOrochi.assets import TrueOrochiAssets
 from module.logger import logger
 from module.exception import TaskEnd
@@ -89,6 +89,30 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
 
         raise TaskEnd
 
+    def activate_realm_raid(self) -> None:
+        """绘卷模式: 在八岐大蛇运行期间检测突破卷数量, 达到阈值时切换到个人突破"""
+        con_scrolls: Scrolls = self.config.orochi.scrolls
+        if not con_scrolls.scrolls_enable:
+            return
+        self.screenshot()
+        cu, res, total = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
+        logger.info(f'Scrolls mode: realm raid ticket {cu}/{total}')
+        if cu < con_scrolls.scrolls_threshold:
+            return
+        logger.info(f'Scrolls mode: realm raid ticket reached threshold {con_scrolls.scrolls_threshold}, switching to RealmRaid')
+        # 关闭加成
+        config: Orochi = self.config.orochi
+        if config.orochi_config.soul_buff_enable:
+            self.goto_page(page_main)
+            self.open_buff()
+            self.soul(is_open=False)
+            self.close_buff()
+        # 设置下次执行时间
+        next_run = datetime.now() + con_scrolls.scrolls_cd
+        self.set_next_run(task='Orochi', success=False, finish=False, target=next_run)
+        self.set_next_run(task='RealmRaid', success=False, finish=False, server=False, target=datetime.now())
+        raise TaskEnd
+
     def switch_orochi_souls(self):
         # 御魂切换方式一
         if self.config.orochi.switch_soul.enable:
@@ -140,6 +164,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 这个时候我已经进入房间了哦
         while 1:
             self.screenshot()
+            # 绘卷模式: 检测突破卷
+            self.activate_realm_raid()
             if self.current_count >= self.limit_count:
                 if self.is_in_room():
                     logger.info('Orochi count limit out')
@@ -201,6 +227,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
+            # 绘卷模式: 检测突破卷
+            self.activate_realm_raid()
             if self.current_count >= self.limit_count:
                 logger.info('Orochi count limit out')
                 break
@@ -257,6 +285,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
+            # 绘卷模式: 检测突破卷
+            self.activate_realm_raid()
             if not is_in_orochi():
                 continue
             if self.current_count >= self.limit_count:
@@ -310,6 +340,9 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
+
+            # 绘卷模式: 检测突破卷
+            self.activate_realm_raid()
 
             if self.current_count >= self.limit_count:
                 if self.is_in_room():
