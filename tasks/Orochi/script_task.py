@@ -60,11 +60,30 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 self.soul(is_open=True)
                 self.close_buff()
 
-        success = True
-        # 绘卷模式: 进入战斗前检测突破卷 (游戏在page_main, 突破卷不可见, 需到page_orochi)
-        if not self.is_in_battle(False):
-            self.activate_realm_raid()
+        # 绘卷模式: 启动时OCR检测突破卷数量, 之后用战斗计数
+        self.scroll_count_initial = 0
+        if config.scrolls.scrolls_enable:
+            self.goto_page(page_orochi)
+            self.screenshot()
+            cu, res, total = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
+            if total > 0:
+                self.scroll_count_initial = cu
+                logger.info(f'Scrolls mode: initial realm raid ticket {cu}/{total}')
+                if cu >= config.scrolls.scrolls_threshold:
+                    logger.info(f'Scrolls mode: ticket already >= threshold {config.scrolls.scrolls_threshold}, switching to RealmRaid')
+                    if config.orochi_config.soul_buff_enable:
+                        self.goto_page(page_main)
+                        self.open_buff()
+                        self.soul(is_open=False)
+                        self.close_buff()
+                    next_run = datetime.now() + config.scrolls.scrolls_cd
+                    self.set_next_run(task='Orochi', success=False, finish=False, target=next_run)
+                    self.set_next_run(task='RealmRaid', success=False, finish=False, server=False, target=datetime.now())
+                    raise TaskEnd
+            else:
+                logger.info('Scrolls mode: OCR failed, will use counter only')
 
+        success = True
         match config.orochi_config.user_status:
             case UserStatus.LEADER: success = self.run_leader()
             case UserStatus.MEMBER: success = self.run_member()
@@ -98,33 +117,23 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         raise TaskEnd
 
     def activate_realm_raid(self) -> None:
-        """绘卷模式: 在御魂页面检测突破卷数量, 达到阈值时切换到个人突破
-        突破卷只在page_orochi可见, 组队房间内不可见, 所以检测点设在:
-        1. 进入战斗前 (run()中, match之前)
-        2. 战斗结束后 (run()中, match之后)
+        """绘卷模式: 通过计数检测突破卷是否达到阈值, 达到则切换到个人突破
+        启动时OCR突破卷数量(scroll_count_initial) + 战斗次数(current_count) = 估算总量
         """
         con_scrolls: Scrolls = self.config.orochi.scrolls
         if not con_scrolls.scrolls_enable:
             return
-        # 导航到御魂页面 (突破卷在此页面可见)
-        self.goto_page(page_orochi)
-        self.screenshot()
-        cu, res, total = self.O_REALM_RAID_NUMBER.ocr(self.device.image)
-        if total == 0:
-            logger.info('Scrolls mode: OCR failed to read realm raid ticket')
+        total_scrolls = self.scroll_count_initial + self.current_count
+        logger.info(f'Scrolls mode: estimated ticket {total_scrolls} (initial {self.scroll_count_initial} + battles {self.current_count})')
+        if total_scrolls < con_scrolls.scrolls_threshold:
             return
-        logger.info(f'Scrolls mode: realm raid ticket {cu}/{total}')
-        if cu < con_scrolls.scrolls_threshold:
-            return
-        logger.info(f'Scrolls mode: realm raid ticket reached threshold {con_scrolls.scrolls_threshold}, switching to RealmRaid')
-        # 关闭加成
+        logger.info(f'Scrolls mode: ticket >= threshold {con_scrolls.scrolls_threshold}, switching to RealmRaid')
         config: Orochi = self.config.orochi
         if config.orochi_config.soul_buff_enable:
             self.goto_page(page_main)
             self.open_buff()
             self.soul(is_open=False)
             self.close_buff()
-        # 设置下次执行时间
         next_run = datetime.now() + con_scrolls.scrolls_cd
         self.set_next_run(task='Orochi', success=False, finish=False, target=next_run)
         self.set_next_run(task='RealmRaid', success=False, finish=False, server=False, target=datetime.now())
@@ -181,6 +190,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
         # 这个时候我已经进入房间了哦
         while 1:
             self.screenshot()
+            # 绘卷模式: 计数检测突破卷
+            if self.config.orochi.scrolls.scrolls_enable and \
+               self.scroll_count_initial + self.current_count >= self.config.orochi.scrolls.scrolls_threshold:
+                logger.info('Scrolls mode: ticket reached threshold during battle')
+                break
             if self.current_count >= self.limit_count:
                 if self.is_in_room():
                     logger.info('Orochi count limit out')
@@ -242,6 +256,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
+            # 绘卷模式: 计数检测突破卷
+            if self.config.orochi.scrolls.scrolls_enable and \
+               self.scroll_count_initial + self.current_count >= self.config.orochi.scrolls.scrolls_threshold:
+                logger.info('Scrolls mode: ticket reached threshold during battle')
+                break
             if self.current_count >= self.limit_count:
                 logger.info('Orochi count limit out')
                 break
@@ -300,6 +319,11 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 continue
             if not is_in_orochi():
                 continue
+            # 绘卷模式: 计数检测突破卷
+            if self.config.orochi.scrolls.scrolls_enable and \
+               self.scroll_count_initial + self.current_count >= self.config.orochi.scrolls.scrolls_threshold:
+                logger.info('Scrolls mode: ticket reached threshold during battle')
+                break
             if self.current_count >= self.limit_count:
                 logger.info('Orochi count limit out')
                 break
@@ -351,6 +375,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             # 检查猫咪奖励
             if self.appear_then_click(self.I_PET_PRESENT, action=self.C_RANDOM_RIGHT, interval=1):
                 continue
+
+            # 绘卷模式: 计数检测突破卷
+            if self.config.orochi.scrolls.scrolls_enable and \
+               self.scroll_count_initial + self.current_count >= self.config.orochi.scrolls.scrolls_threshold:
+                logger.info('Scrolls mode: ticket reached threshold during battle')
+                break
 
             if self.current_count >= self.limit_count:
                 if self.is_in_room():
